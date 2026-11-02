@@ -1,0 +1,72 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#6d4aff"><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><title>Conexão de Atores</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--card:#f0f0f4;--ac:#6d4aff;--ok:#1a8f4c}
+@media(prefers-color-scheme:dark){:root{--bg:#15151a;--fg:#eee;--mut:#9a9aa5;--card:#23232b;--ac:#9b84ff;--ok:#4cc77f}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+main{max-width:560px;margin:0 auto;padding:16px}h1{font-size:22px;margin:0 0 12px}
+.card{background:var(--card);border-radius:12px;padding:14px;margin:10px 0}.mut{color:var(--mut);font-size:14px}
+input{width:100%;box-sizing:border-box;padding:12px;font-size:16px;border-radius:10px;border:1px solid var(--mut);background:var(--bg);color:var(--fg)}
+button{font:inherit;padding:10px 14px;margin:4px 4px 0 0;border-radius:10px;border:0;background:var(--ac);color:#fff;cursor:pointer}
+button.s{background:var(--card);color:var(--fg);border:1px solid var(--mut)}
+.pick{display:inline-flex;align-items:center;gap:8px;text-align:left}.pick img{width:32px;height:48px;border-radius:4px;object-fit:cover;background:var(--mut)}
+#msg{color:var(--mut);min-height:20px}#res{color:var(--ok);font-weight:600}
+</style></head><body><main>
+<h1>🎬 Conexão de Atores</h1>
+<div id="setup" class="card" hidden>
+<p><b>Configuração (uma vez só)</b></p>
+<p class="mut">Crie uma conta em themoviedb.org, vá em Configurações ➜ API e copie o “Token de Leitura da API” (ou a chave v3). Cole abaixo. Ele fica salvo só neste aparelho.</p>
+<input id="key" placeholder="Cole o token ou a chave aqui" autocomplete="off"><button onclick="saveKey()">Salvar</button><p id="smsg" class="mut"></p></div>
+<div id="game" hidden>
+<div class="card"><div id="score"></div><div class="mut">Cada vitória vale 100 pontos, −15 por filme extra e −20 por dica (mínimo 10).</div></div>
+<div class="card"><div class="mut">Conecte o ator inicial ao de destino:</div><div id="goal" style="font-size:18px"></div><div class="mut" id="chain"></div></div>
+<div id="play"><p id="cur"></p>
+<input id="q" placeholder="Digite um filme e aperte Enter" autocomplete="off"><div id="results"></div><div id="cast"></div><p id="msg"></p>
+<button class="s" onclick="hint()">Dica</button></div>
+<p id="res"></p><button onclick="newGame()">Novo jogo</button><button class="s" onclick="resetKey()">Trocar chave</button></div>
+<p class="mut" style="margin-top:24px">This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+</main>
+<script>
+const $=id=>document.getElementById(id),IMG='https://image.tmdb.org/t/p/w92';
+const KEY=()=>{try{return localStorage.getItem('tmdbkey')||''}catch(e){return ''}};
+let S,T,cur,chain,over,movie,hints=0;
+const ST=()=>{try{return JSON.parse(localStorage.getItem('score'))||{t:0,b:0,w:0}}catch(e){return {t:0,b:0,w:0}}};
+const SV=v=>{try{localStorage.setItem('score',JSON.stringify(v))}catch(e){}};
+function showScore(){const v=ST();$('score').textContent='⭐ Total: '+v.t+' · 🏆 Melhor: '+v.b+' · ✅ Vitórias: '+v.w}
+async function api(p,q={}){const k=KEY(),u=new URL('https://api.themoviedb.org/3'+p),h={};
+ u.searchParams.set('language','pt-BR');for(const a in q)u.searchParams.set(a,q[a]);
+ if(k.length>40)h.Authorization='Bearer '+k;else u.searchParams.set('api_key',k);
+ const r=await fetch(u,{headers:h});if(!r.ok)throw new Error(r.status);return r.json()}
+const say=m=>$('msg').textContent=m;
+async function saveKey(){try{localStorage.setItem('tmdbkey',$('key').value.trim());await api('/configuration');start()}
+ catch(e){$('smsg').textContent='Chave inválida ou sem internet. Confira e tente de novo.'}}
+function resetKey(){try{localStorage.removeItem('tmdbkey')}catch(e){}start()}
+function start(){const ok=KEY();$('setup').hidden=!!ok;$('game').hidden=!ok;if(ok)newGame()}
+async function newGame(){say('Sorteando atores...');$('res').textContent='';$('cast').innerHTML='';$('results').innerHTML='';$('q').value='';
+ try{const pg=()=>1+Math.random()*10|0,r=await Promise.all([api('/person/popular',{page:pg()}),api('/person/popular',{page:pg()})]);
+ const pool=[].concat(r[0].results,r[1].results).filter(p=>p.known_for_department=='Acting');
+ S=pool.splice(Math.random()*pool.length|0,1)[0];T=pool[Math.random()*pool.length|0];
+ cur=S;chain=[];over=false;hints=0;say('');render()}catch(e){say('Erro ao falar com o TMDB. Verifique a chave e a internet.')}}
+function render(){showScore();$('goal').innerHTML='<b>'+S.name+'</b> ➜ <b>'+T.name+'</b>';
+ $('chain').textContent=S.name+chain.map(c=>' ➜ ('+c.f+') '+c.a.name).join('');
+ $('cur').textContent='Agora: '+cur.name+'. Cite um filme com '+cur.name+'.';$('play').hidden=over}
+$('q').addEventListener('keydown',async e=>{if(e.key!='Enter')return;say('Buscando...');
+ try{const d=await api('/search/movie',{query:$('q').value}),box=$('results');box.innerHTML='';
+ d.results.slice(0,6).forEach(m=>{const b=document.createElement('button');b.className='s';
+ b.textContent=m.title+(m.release_date?' ('+m.release_date.slice(0,4)+')':'');b.onclick=()=>pick(m);box.appendChild(b)});
+ say(d.results.length?'':'Nenhum filme encontrado.');if(d.results.length)say('')}catch(x){say('Erro na busca.')}});
+async function pick(m){say('Carregando elenco...');$('results').innerHTML='';
+ try{const cast=(await api('/movie/'+m.id+'/credits')).cast;
+ if(!cast.some(c=>c.id==cur.id))return say(cur.name+' não está em “'+m.title+'”.');
+ if(cast.some(c=>c.id==T.id)){chain.push({f:m.title,a:T});over=true;$('cast').innerHTML='';
+  const pts=Math.max(10,100-15*(chain.length-1)-20*hints),v=ST();v.t+=pts;v.w++;v.b=Math.max(v.b,pts);SV(v);render();
+  $('res').textContent='🎉 Conectou em '+chain.length+' filme(s)! +'+pts+' pontos';return say('')}
+ say('');const box=$('cast');box.innerHTML='<p>Elenco de <b>'+m.title+'</b>. Escolha o próximo ator:</p>';
+ cast.filter(c=>c.id!=cur.id).slice(0,20).forEach(c=>{const b=document.createElement('button');b.className='s pick';
+ b.innerHTML='<img src="'+(c.profile_path?IMG+c.profile_path:'')+'" alt=""><span></span>';b.lastChild.textContent=c.name;
+ b.onclick=()=>{chain.push({f:m.title,a:c});cur=c;box.innerHTML='';$('q').value='';render()};box.appendChild(b)})}
+ catch(e){say('Erro ao carregar o elenco.')}}
+async function hint(){if(over)return;hints++;try{const d=await api('/person/'+cur.id+'/movie_credits'),t=d.cast.sort((a,b)=>b.popularity-a.popularity).slice(0,3).map(m=>m.title);
+ say('Dica (−20 pts): '+cur.name+' fez '+t.join(', ')+'.')}catch(e){say('Erro ao buscar dica.')}}
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
+start();
+</script></body></html>
