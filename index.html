@@ -36,15 +36,16 @@ const HT=()=>{try{return JSON.parse(localStorage.getItem('hist'))||[]}catch(e){r
 function showHist(){const h=HT(),b=$('hist');b.innerHTML='';if(!h.length){b.textContent='Nenhuma ainda.';return}
  h.forEach(x=>{const d=document.createElement('div');d.style.margin='8px 0';d.textContent=x.c+' — '+x.n+' filme(s), +'+x.p+' pts';b.appendChild(d)})}
 function showScore(){const v=ST();$('score').textContent='⭐ Total: '+v.t+' · 🏆 Melhor: '+v.b+' · ✅ Vitórias: '+v.w}
-async function api(p,q={}){const k=KEY(),u=new URL('https://api.themoviedb.org/3'+p),h={};
+const PROXY='';
+async function api(p,q={}){const k=KEY(),u=new URL((PROXY||'https://api.themoviedb.org/3')+p),h={};
  u.searchParams.set('language','pt-BR');for(const a in q)u.searchParams.set(a,q[a]);
- if(k.length>40)h.Authorization='Bearer '+k;else u.searchParams.set('api_key',k);
+ if(!PROXY){if(k.length>40)h.Authorization='Bearer '+k;else u.searchParams.set('api_key',k)}
  const r=await fetch(u,{headers:h});if(!r.ok)throw new Error(r.status);return r.json()}
 const say=m=>$('msg').textContent=m;
 async function saveKey(){try{localStorage.setItem('tmdbkey',$('key').value.trim());await api('/configuration');start()}
  catch(e){$('smsg').textContent='Chave inválida ou sem internet. Confira e tente de novo.'}}
 function resetKey(){try{localStorage.removeItem('tmdbkey')}catch(e){}start()}
-function start(){const ok=KEY();$('setup').hidden=!!ok;$('game').hidden=!ok;if(ok)newGame()}
+function start(){const ok=PROXY||KEY();if(PROXY)document.querySelector('button[onclick="resetKey()"]').hidden=true;$('setup').hidden=!!ok;$('game').hidden=!ok;if(ok)newGame()}
 async function newGame(){say('Sorteando atores...');$('res').textContent='';$('cast').innerHTML='';$('results').innerHTML='';$('q').value='';
  try{const pg=()=>1+Math.random()*10|0,r=await Promise.all([api('/person/popular',{page:pg()}),api('/person/popular',{page:pg()})]);
  const pool=[].concat(r[0].results,r[1].results).filter(p=>p.known_for_department=='Acting');
