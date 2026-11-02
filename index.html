@@ -36,7 +36,7 @@ const HT=()=>{try{return JSON.parse(localStorage.getItem('hist'))||[]}catch(e){r
 function showHist(){const h=HT(),b=$('hist');b.innerHTML='';if(!h.length){b.textContent='Nenhuma ainda.';return}
  h.forEach(x=>{const d=document.createElement('div');d.style.margin='8px 0';d.textContent=x.c+' — '+x.n+' filme(s), +'+x.p+' pts';b.appendChild(d)})}
 function showScore(){const v=ST();$('score').textContent='⭐ Total: '+v.t+' · 🏆 Melhor: '+v.b+' · ✅ Vitórias: '+v.w}
-const PROXY='';
+const PROXY='https://conexao-tmdb.borgeswilliam93.workers.dev/';
 async function api(p,q={}){const k=KEY(),u=new URL((PROXY||'https://api.themoviedb.org/3')+p),h={};
  u.searchParams.set('language','pt-BR');for(const a in q)u.searchParams.set(a,q[a]);
  if(!PROXY){if(k.length>40)h.Authorization='Bearer '+k;else u.searchParams.set('api_key',k)}
