@@ -7,73 +7,114 @@ main{max-width:560px;margin:0 auto;padding:16px}h1{font-size:22px;margin:0 0 12p
 .card{background:var(--card);border-radius:12px;padding:14px;margin:10px 0}.mut{color:var(--mut);font-size:14px}
 input{width:100%;box-sizing:border-box;padding:12px;font-size:16px;border-radius:10px;border:1px solid var(--mut);background:var(--bg);color:var(--fg)}
 button{font:inherit;padding:10px 14px;margin:4px 4px 0 0;border-radius:10px;border:0;background:var(--ac);color:#fff;cursor:pointer}
-button.s{background:var(--card);color:var(--fg);border:1px solid var(--mut)}
+button.s{background:var(--card);color:var(--fg);border:1px solid var(--mut)}button:disabled{opacity:.5}
 .pick{display:inline-flex;align-items:center;gap:8px;text-align:left}.pick img{width:32px;height:48px;border-radius:4px;object-fit:cover;background:var(--mut)}
-#msg{color:var(--mut);min-height:20px}#res{color:var(--ok);font-weight:600}
+#msg{color:var(--mut);min-height:20px}#res{color:var(--ok);font-weight:600}#hints div{margin:6px 0;padding:8px;border-left:3px solid var(--ac)}
 </style></head><body><main>
 <h1>🎬 Conexão de Atores</h1>
 <div id="setup" class="card" hidden>
 <p><b>Configuração (uma vez só)</b></p>
-<p class="mut">Crie uma conta em themoviedb.org, vá em Configurações ➜ API e copie o “Token de Leitura da API” (ou a chave v3). Cole abaixo. Ele fica salvo só neste aparelho.</p>
-<input id="key" placeholder="Cole o token ou a chave aqui" autocomplete="off"><button onclick="saveKey()">Salvar</button><p id="smsg" class="mut"></p></div>
+<p class="mut">Crie uma conta em themoviedb.org, vá em Configurações ➜ API e copie o “Token de Leitura da API”. Cole abaixo. Ele fica salvo só neste aparelho.</p>
+<input id="key" placeholder="Cole o token aqui" autocomplete="off"><button onclick="saveKey()">Salvar</button><p id="smsg" class="mut"></p></div>
 <div id="game" hidden>
-<div class="card"><div id="score"></div><div class="mut">Cada vitória vale 100 pontos, −15 por filme extra e −20 por dica (mínimo 10).</div></div>
+<div class="card"><div id="score"></div><div class="mut">Vitória: 100 pontos, −15 por filme/novela extra. Dicas (máx. 3): −10, −20 e −50.</div></div>
+<div id="mode" class="card" hidden><p><b>O que você quer jogar?</b></p><button onclick="setMode('movie')">🎬 Filmes</button><button onclick="setMode('tv')">📺 Novelas da Globo</button></div>
+<div id="board" hidden>
 <div class="card"><div class="mut">Conecte o ator inicial ao de destino:</div><div id="goal" style="font-size:18px"></div><div class="mut" id="chain"></div></div>
 <div id="play"><p id="cur"></p>
-<input id="q" placeholder="Digite um filme e aperte Enter" autocomplete="off"><div id="results"></div><div id="cast"></div><p id="msg"></p>
-<button class="s" onclick="hint()">Dica</button></div>
-<p id="res"></p><button onclick="newGame()">Novo jogo</button><button class="s" onclick="resetKey()">Trocar chave</button>
+<input id="q" placeholder="Digite o nome e aperte Enter" autocomplete="off"><div id="results"></div><div id="cast"></div><p id="msg"></p>
+<button class="s" id="hb" onclick="hint()">Dica</button><div id="hints"></div></div>
+<p id="res"></p></div>
+<button onclick="showMode()">Novo jogo</button><button class="s" onclick="resetKey()">Trocar chave</button>
 <div class="card"><b>Últimas 5 conexões</b><div id="hist" class="mut"></div></div></div>
 <p class="mut" style="margin-top:24px">This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
 </main>
 <script>
-const $=id=>document.getElementById(id),IMG='https://image.tmdb.org/t/p/w92';
-const KEY=()=>{try{return localStorage.getItem('tmdbkey')||''}catch(e){return ''}};
-let S,T,cur,chain,over,movie,hints=0;
-const ST=()=>{try{return JSON.parse(localStorage.getItem('score'))||{t:0,b:0,w:0}}catch(e){return {t:0,b:0,w:0}}};
-const SV=v=>{try{localStorage.setItem('score',JSON.stringify(v))}catch(e){}};
-const HT=()=>{try{return JSON.parse(localStorage.getItem('hist'))||[]}catch(e){return []}};
-function showHist(){const h=HT(),b=$('hist');b.innerHTML='';if(!h.length){b.textContent='Nenhuma ainda.';return}
- h.forEach(x=>{const d=document.createElement('div');d.style.margin='8px 0';d.textContent=x.c+' — '+x.n+' filme(s), +'+x.p+' pts';b.appendChild(d)})}
-function showScore(){const v=ST();$('score').textContent='⭐ Total: '+v.t+' · 🏆 Melhor: '+v.b+' · ✅ Vitórias: '+v.w}
 const PROXY='https://conexao-tmdb.borgeswilliam93.workers.dev';
+const $=id=>document.getElementById(id),IMG='https://image.tmdb.org/t/p/w92',COST=[10,20,50];
+const KEY=()=>{try{return localStorage.getItem('tmdbkey')||''}catch(e){return ''}};
+let S,T,cur,chain,over,hints=0,cost=0,mode='movie',plans={};
+const tv=()=>mode=='tv',ttl=m=>m.title||m.name,yr=m=>(m.release_date||m.first_air_date||'').slice(0,4);
 async function api(p,q={}){const k=KEY(),u=new URL((PROXY||'https://api.themoviedb.org/3')+p),h={};
  u.searchParams.set('language','pt-BR');for(const a in q)u.searchParams.set(a,q[a]);
  if(!PROXY){if(k.length>40)h.Authorization='Bearer '+k;else u.searchParams.set('api_key',k)}
  const r=await fetch(u,{headers:h});if(!r.ok)throw new Error(r.status);return r.json()}
 const say=m=>$('msg').textContent=m;
+const ST=()=>{try{return JSON.parse(localStorage.getItem('score'))||{t:0,b:0,w:0}}catch(e){return {t:0,b:0,w:0}}};
+const SV=v=>{try{localStorage.setItem('score',JSON.stringify(v))}catch(e){}};
+const HT=()=>{try{return JSON.parse(localStorage.getItem('hist'))||[]}catch(e){return []}};
+function showHist(){const h=HT(),b=$('hist');b.innerHTML='';if(!h.length){b.textContent='Nenhuma ainda.';return}
+ h.forEach(x=>{const d=document.createElement('div');d.style.margin='8px 0';d.textContent=x.c+' — '+x.n+' obra(s), +'+x.p+' pts';b.appendChild(d)})}
+function showScore(){const v=ST();$('score').textContent='⭐ Total: '+v.t+' · 🏆 Melhor: '+v.b+' · ✅ Vitórias: '+v.w}
 async function saveKey(){try{localStorage.setItem('tmdbkey',$('key').value.trim());await api('/configuration');start()}
  catch(e){$('smsg').textContent='Chave inválida ou sem internet. Confira e tente de novo.'}}
 function resetKey(){try{localStorage.removeItem('tmdbkey')}catch(e){}start()}
-function start(){const ok=PROXY||KEY();if(PROXY)document.querySelector('button[onclick="resetKey()"]').hidden=true;$('setup').hidden=!!ok;$('game').hidden=!ok;if(ok)newGame()}
-async function newGame(){say('Sorteando atores...');$('res').textContent='';$('cast').innerHTML='';$('results').innerHTML='';$('q').value='';
- try{const pg=()=>1+Math.random()*10|0,r=await Promise.all([api('/person/popular',{page:pg()}),api('/person/popular',{page:pg()})]);
- const pool=[].concat(r[0].results,r[1].results).filter(p=>p.known_for_department=='Acting');
- S=pool.splice(Math.random()*pool.length|0,1)[0];T=pool[Math.random()*pool.length|0];
- cur=S;chain=[];over=false;hints=0;say('');render()}catch(e){say('Erro ao falar com o TMDB. Verifique a chave e a internet.')}}
-function render(){showScore();showHist();$('goal').innerHTML='<b>'+S.name+'</b> ➜ <b>'+T.name+'</b>';
+function start(){const ok=PROXY||KEY();$('setup').hidden=!!ok;$('game').hidden=!ok;
+ if(PROXY)document.querySelector('button[onclick="resetKey()"]').hidden=true;
+ if(ok){showScore();showHist();showMode()}}
+function showMode(){$('mode').hidden=false;$('board').hidden=true}
+function setMode(m){mode=m;$('mode').hidden=true;newGame()}
+const castOf=async w=>tv()?(await api('/tv/'+w.id+'/aggregate_credits')).cast:(await api('/movie/'+w.id+'/credits')).cast;
+async function worksOf(p){const d=await api('/person/'+p.id+(tv()?'/tv_credits':'/movie_credits'));
+ let l=d.cast.filter(m=>yr(m));if(tv())l=l.filter(m=>(m.origin_country||[]).includes('BR'));
+ return l.sort((a,b)=>b.popularity-a.popularity).slice(0,12)}
+const rnd=a=>a.splice(Math.random()*a.length|0,1)[0];
+const disc=pg=>api('/discover/tv',{with_networks:60,with_genres:10766,sort_by:'popularity.desc',page:pg}).then(d=>d.results.length?d:api('/discover/tv',{with_networks:60,sort_by:'popularity.desc',page:pg}));
+async function newGame(){say('');$('res').textContent='';$('cast').innerHTML='';$('results').innerHTML='';$('hints').innerHTML='';$('q').value='';
+ hints=0;cost=0;plans={};over=false;chain=[];$('board').hidden=false;$('goal').textContent='Sorteando atores...';$('chain').textContent='';
+ try{const pg=()=>1+Math.random()*(tv()?3:10)|0;
+ if(!tv()){const r=await Promise.all([api('/person/popular',{page:pg()}),api('/person/popular',{page:pg()})]);
+  const pool=[].concat(r[0].results,r[1].results).filter(p=>p.known_for_department=='Acting');S=rnd(pool);T=rnd(pool)}
+ else{const r=await Promise.all([disc(pg()),disc(pg())]),pool=[].concat(r[0].results,r[1].results);
+  const s1=rnd(pool),s2=rnd(pool.filter(x=>x.id!=s1.id)),c=await Promise.all([castOf(s1),castOf(s2)]);
+  const a=c[0].slice(0,8),b=c[1].slice(0,8).filter(x=>x.id!=a[0].id);S=rnd(a);T=rnd(b)}
+ cur=S;render()}catch(e){$('goal').textContent='';say('Erro ao falar com o TMDB. Verifique a chave e a internet.')}}
+function render(){showScore();showHist();
+ $('goal').innerHTML='<b>'+S.name+'</b> ➜ <b>'+T.name+'</b>';
  $('chain').textContent=S.name+chain.map(c=>' ➜ ('+c.f+') '+c.a.name).join('');
- $('cur').textContent='Agora: '+cur.name+'. Cite um filme com '+cur.name+'.';$('play').hidden=over}
+ $('cur').textContent='Agora: '+cur.name+'. Cite '+(tv()?'uma novela':'um filme')+' com '+cur.name+'.';
+ $('hb').textContent=hints<3?'Dica (−'+COST[hints]+' pts)':'Sem dicas';$('hb').disabled=hints>=3;$('play').hidden=over}
 $('q').addEventListener('keydown',async e=>{if(e.key!='Enter')return;say('Buscando...');
- try{const d=await api('/search/movie',{query:$('q').value}),box=$('results');box.innerHTML='';
- d.results.slice(0,6).forEach(m=>{const b=document.createElement('button');b.className='s';
- b.textContent=m.title+(m.release_date?' ('+m.release_date.slice(0,4)+')':'');b.onclick=()=>pick(m);box.appendChild(b)});
- say(d.results.length?'':'Nenhum filme encontrado.');if(d.results.length)say('')}catch(x){say('Erro na busca.')}});
+ try{const d=await api(tv()?'/search/tv':'/search/movie',{query:$('q').value}),box=$('results');box.innerHTML='';
+ const l=d.results.filter(m=>!tv()||(m.origin_country||[]).includes('BR')).slice(0,6);
+ l.forEach(m=>{const b=document.createElement('button');b.className='s';b.textContent=ttl(m)+(yr(m)?' ('+yr(m)+')':'');b.onclick=()=>pick(m);box.appendChild(b)});
+ say(l.length?'':'Nada encontrado.')}catch(x){say('Erro na busca.')}});
 async function pick(m){say('Carregando elenco...');$('results').innerHTML='';
- try{const cast=(await api('/movie/'+m.id+'/credits')).cast;
- if(!cast.some(c=>c.id==cur.id))return say(cur.name+' não está em “'+m.title+'”.');
- if(cast.some(c=>c.id==T.id)){chain.push({f:m.title,a:T});over=true;$('cast').innerHTML='';
-  const pts=Math.max(10,100-15*(chain.length-1)-20*hints),v=ST();v.t+=pts;v.w++;v.b=Math.max(v.b,pts);SV(v);
+ try{const cast=await castOf(m);
+ if(!cast.some(c=>c.id==cur.id))return say(cur.name+' não está em “'+ttl(m)+'”.');
+ if(cast.some(c=>c.id==T.id)){chain.push({f:ttl(m),a:T});over=true;$('cast').innerHTML='';
+  const pts=Math.max(10,100-15*(chain.length-1)-cost),v=ST();v.t+=pts;v.w++;v.b=Math.max(v.b,pts);SV(v);
   const h=HT();h.unshift({c:S.name+chain.map(c=>' ➜ ('+c.f+') '+c.a.name).join(''),n:chain.length,p:pts});
   try{localStorage.setItem('hist',JSON.stringify(h.slice(0,5)))}catch(e){}render();
-  $('res').textContent='🎉 Conectou em '+chain.length+' filme(s)! +'+pts+' pontos';return say('')}
- say('');const box=$('cast');box.innerHTML='<p>Elenco de <b>'+m.title+'</b>. Escolha o próximo ator:</p>';
+  $('res').textContent='🎉 Conectou em '+chain.length+' obra(s)! +'+pts+' pontos';return say('')}
+ say('');const box=$('cast');box.innerHTML='<p>Elenco de <b></b>. Escolha o próximo ator:</p>';box.querySelector('b').textContent=ttl(m);
  cast.filter(c=>c.id!=cur.id).slice(0,20).forEach(c=>{const b=document.createElement('button');b.className='s pick';
  b.innerHTML='<img src="'+(c.profile_path?IMG+c.profile_path:'')+'" alt=""><span></span>';b.lastChild.textContent=c.name;
- b.onclick=()=>{chain.push({f:m.title,a:c});cur=c;box.innerHTML='';$('q').value='';render()};box.appendChild(b)})}
+ b.onclick=()=>{chain.push({f:ttl(m),a:c});cur=c;box.innerHTML='';$('q').value='';render()};box.appendChild(b)})}
  catch(e){say('Erro ao carregar o elenco.')}}
-async function hint(){if(over)return;hints++;try{const d=await api('/person/'+cur.id+'/movie_credits'),t=d.cast.sort((a,b)=>b.popularity-a.popularity).slice(0,3).map(m=>m.title);
- say('Dica (−20 pts): '+cur.name+' fez '+t.join(', ')+'.')}catch(e){say('Erro ao buscar dica.')}}
+async function plan(){if(plans[cur.id])return plans[cur.id];
+ const [cw,tw]=await Promise.all([worksOf(cur),worksOf(T)]);
+ const [cc,tc]=await Promise.all([Promise.all(cw.map(castOf)),Promise.all(tw.map(castOf))]);
+ const tm={};tc.forEach((c,i)=>c.forEach(x=>{if(x.id!=T.id&&x.id!=cur.id&&!tm[x.id])tm[x.id]=tw[i]}));
+ let P={type:'far',tw},best=null;
+ for(let i=0;i<cw.length;i++){
+  if(cc[i].some(x=>x.id==T.id)){P={type:'direct',w:cw[i],tw};break}
+  cc[i].slice(0,18).forEach(x=>{if(x.id==cur.id)return;const t=tm[x.id]?2:1;
+   if(!best||t>best.t||(t==best.t&&x.popularity>best.x.popularity))best={t,x,w:cw[i]}})}
+ if(P.type=='far'&&best)P={type:best.t==2?'two':'far',x:best.x,w:best.w,tw};
+ return plans[cur.id]=P}
+async function hint(){if(over||hints>=3)return;$('hb').disabled=true;say('Pensando na dica...');
+ try{const P=await plan(),n=hints,o=tv()?'novela':'filme',um=tv()?'uma':'um',nm=P.tw.slice(0,3).map(ttl).join(', ');let t;
+ if(P.type=='direct')t=['Você está a um passo: '+cur.name+' e '+T.name+' estiveram '+um+' '+o+' juntos.',
+  'Esse '+o+' é de '+yr(P.w)+' e o título começa com “'+ttl(P.w)[0]+'”.','Cite “'+ttl(P.w)+'”.'][n];
+ else if(P.type=='two')t=['Faltam 2 '+o+'s: existe um ator que trabalhou com '+cur.name+' e também com '+T.name+'. O nome dele começa com “'+P.x.name[0]+'”.',
+  'O ator-ponte é '+P.x.name+'.','Cite “'+ttl(P.w)+'” e escolha '+P.x.name+'.'][n];
+ else t=[T.name+' atuou em: '+(nm||'obras que não consegui listar')+'. Pense em quem trabalhou nelas.',
+  P.x?P.x.name+' é um bom ator-ponte: trabalhou com '+cur.name+' e tem muita carreira.':'Tente '+um+' '+o+' mais conhecid'+(tv()?'a':'o')+' de '+cur.name+'.',
+  P.x?'Cite “'+ttl(P.w)+'” e escolha '+P.x.name+'.':'Tente outr'+(tv()?'a':'o')+' '+o+' de '+cur.name+'.'][n];
+ const d=document.createElement('div');d.textContent='Dica '+(n+1)+' (−'+COST[n]+'): '+t;$('hints').appendChild(d);
+ cost+=COST[n];hints++;say('');render()}catch(e){say('Erro ao buscar dica.');render()}}
+$('q').placeholder='Digite o nome e aperte Enter';
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
 start();
 </script></body></html>
