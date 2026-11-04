@@ -54,7 +54,10 @@ function start(){const ok=PROXY||KEY();$('setup').hidden=!!ok;$('game').hidden=!
  if(ok){showScore();showHist();showMode()}}
 function showMode(){$('mode').hidden=false;$('board').hidden=true}
 function setMode(m){mode=m;$('mode').hidden=true;newGame()}
-const castOf=async w=>tv()?(await api('/tv/'+w.id+'/aggregate_credits')).cast:(await api('/movie/'+w.id+'/credits')).cast;
+const nn=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim(),same=(a,b)=>a.id==b.id||nn(a.name)==nn(b.name);
+const castOf=async(w,full)=>{if(!tv())return (await api('/movie/'+w.id+'/credits')).cast;
+ const a=(await api('/tv/'+w.id+'/aggregate_credits')).cast;if(!full)return a;
+ try{const b=(await api('/tv/'+w.id+'/credits')).cast,ids=new Set(a.map(x=>x.id));return a.concat(b.filter(x=>!ids.has(x.id)))}catch(e){return a}};
 async function worksOf(p){const d=await api('/person/'+p.id+(tv()?'/tv_credits':'/movie_credits'));
  let l=d.cast.filter(m=>yr(m));if(tv())l=l.filter(m=>(m.origin_country||[]).includes('BR'));
  return l.sort((a,b)=>b.popularity-a.popularity).slice(0,12)}
@@ -80,21 +83,21 @@ $('q').addEventListener('keydown',async e=>{if(e.key!='Enter')return;say('Buscan
  l.forEach(m=>{const b=document.createElement('button');b.className='s';b.textContent=ttl(m)+(yr(m)?' ('+yr(m)+')':'');b.onclick=()=>pick(m);box.appendChild(b)});
  say(l.length?'':'Nada encontrado.')}catch(x){say('Erro na busca.')}});
 async function pick(m){say('Carregando elenco...');$('results').innerHTML='';
- try{const cast=await castOf(m);
- if(!cast.some(c=>c.id==cur.id))return say(cur.name+' não está em “'+ttl(m)+'”.');
- if(cast.some(c=>c.id==T.id)){chain.push({f:ttl(m),a:T});over=true;$('cast').innerHTML='';
+ try{const cast=await castOf(m,true);
+ if(!cast.some(c=>same(c,cur)))return say(cur.name+' não consta no elenco de “'+ttl(m)+'” no TMDB.');
+ if(cast.some(c=>same(c,T))){chain.push({f:ttl(m),a:T});over=true;$('cast').innerHTML='';
   const pts=Math.max(10,100-15*(chain.length-1)-cost),v=ST();v.t+=pts;v.w++;v.b=Math.max(v.b,pts);SV(v);
   const h=HT();h.unshift({c:S.name+chain.map(c=>' ➜ ('+c.f+') '+c.a.name).join(''),n:chain.length,p:pts});
   try{localStorage.setItem('hist',JSON.stringify(h.slice(0,5)))}catch(e){}render();
   $('res').textContent='🎉 Conectou em '+chain.length+' obra(s)! +'+pts+' pontos';return say('')}
  say('');const box=$('cast');box.innerHTML='<p>Elenco de <b></b>. Escolha o próximo ator:</p>';box.querySelector('b').textContent=ttl(m);
- cast.filter(c=>c.id!=cur.id).slice(0,20).forEach(c=>{const b=document.createElement('button');b.className='s pick';
+ cast.filter(c=>!same(c,cur)).slice(0,20).forEach(c=>{const b=document.createElement('button');b.className='s pick';
  b.innerHTML='<img src="'+(c.profile_path?IMG+c.profile_path:'')+'" alt=""><span></span>';b.lastChild.textContent=c.name;
  b.onclick=()=>{chain.push({f:ttl(m),a:c});cur=c;box.innerHTML='';$('q').value='';render()};box.appendChild(b)})}
  catch(e){say('Erro ao carregar o elenco.')}}
 async function plan(){if(plans[cur.id])return plans[cur.id];
  const [cw,tw]=await Promise.all([worksOf(cur),worksOf(T)]);
- const [cc,tc]=await Promise.all([Promise.all(cw.map(castOf)),Promise.all(tw.map(castOf))]);
+ const [cc,tc]=await Promise.all([Promise.all(cw.map(w=>castOf(w))),Promise.all(tw.map(w=>castOf(w)))]);
  const tm={};tc.forEach((c,i)=>c.forEach(x=>{if(x.id!=T.id&&x.id!=cur.id&&!tm[x.id])tm[x.id]=tw[i]}));
  let P={type:'far',tw},best=null;
  for(let i=0;i<cw.length;i++){
